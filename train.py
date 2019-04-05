@@ -6,30 +6,75 @@ from PIL import Image
 from model import discriminator, generator
 from keras.models import Sequential
 from keras.optimizers import SGD, Adam
+from keras.utils import plot_model
 from visualizer import *
+from keras import backend as K
+import skyrogue_loader
+
+from keras.backend.tensorflow_backend import set_session
+import tensorflow as tf
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
+# config.log_device_placement = True  # to log device placement (on which device the operation ran)
+sess = tf.Session(config=config)
+set_session(sess)  # set this TensorFlow session as the default session for Keras
+
+# After we have a seemingly working impl we can play around with fp16
+#K.set_floatx('float16')
+#K.set_epsilon(1e-4)
 
 BATCH_SIZE = 32
-NUM_EPOCH = 50
+#BATCH_SIZE = 8
+#NUM_EPOCH = 50
+NUM_EPOCH = 50000
 LR = 0.0002  # initial learning rate
 B1 = 0.5  # momentum term
 GENERATED_IMAGE_PATH = 'images/'
 GENERATED_MODEL_PATH = 'models/'
 
+
+
+from PIL import Image
+
 def train():
-    (X_train, y_train), (_, _) = mnist.load_data()
-    # normalize images
-    X_train = (X_train.astype(np.float32) - 127.5)/127.5
-    X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
+    cache_path = ".full_preprocessed.npy"
+    try:
+        X_train = np.load(cache_path)
+        print("Got cached preproccessed images")
+    except IOError:
+        #(X_train, y_train), (_, _) = mnist.load_data()
+        #(X_train, _), (_, _) = skyrogue.load_data(160, 120)
+        X_train = skyrogue_loader.load_images()
+        X_train = X_train[800:1100, :, :]
+        # normalize images
+        print("Started normalizing images")
+        X_train = (X_train.astype(np.float16) - 127.5)/127.5
+        print("Finished normalizing images")
+        X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
+        print("Finished reshape")
+        np.save(cache_path, X_train)
+
+    a = .2
+    for i in range(1, X_train.shape[0], X_train.shape[0] // 20):
+        continue
+        print("Target")
+        X_train[i, :, :, 0] = X_train[i, :, :, 0] * (1-a) + a * np.random.uniform(-1, 1, [240, 320])
+        Image.fromarray(((X_train[i, :, :, 0] + 1) * 127.5).astype('uint8')).show()
+        _ = input()
 
     # build GAN
     g = generator()
+    plot_model(g, to_file='generator.png')
+
     d = discriminator()
+    plot_model(g, to_file='discriminator.png')
 
     opt = Adam(lr=LR,beta_1=B1)
     d.trainable = True
     d.compile(loss='binary_crossentropy',
               metrics=['accuracy'],
               optimizer=opt)
+
     d.trainable = False
     dcgan = Sequential([g, d])
     opt= Adam(lr=LR,beta_1=B1)
@@ -47,32 +92,39 @@ def train():
     print("-------------------")
     print("Total epoch:", NUM_EPOCH, "Number of batches:", num_batches)
     print("-------------------")
-    z_pred = np.array([np.random.uniform(-1,1,100) for _ in range(49)])
+    #z_pred = np.array([np.random.uniform(-1,1,100) for _ in range(49)])
+    z_pred = np.array([np.random.normal(0,0.5,100) for _ in range(49)])
     y_g = [1]*BATCH_SIZE
     y_d_true = [1]*BATCH_SIZE
     y_d_gen = [0]*BATCH_SIZE
     for epoch in list(map(lambda x: x+1,range(NUM_EPOCH))):
+        fuzz = max((3000 - epoch) / 3000, 0)
+
         for index in range(num_batches):
             X_d_true = X_train[index*BATCH_SIZE:(index+1)*BATCH_SIZE]
+            X_d_fuzz = X_d_true * (1-fuzz) + fuzz * np.random.uniform(-1, 1, [BATCH_SIZE, 240, 320, 1])
+
             X_g = np.array([np.random.normal(0,0.5,100) for _ in range(BATCH_SIZE)])
             X_d_gen = g.predict(X_g, verbose=0)
 
             # train discriminator
-            d_loss = d.train_on_batch(X_d_true, y_d_true)
+            d_loss = d.train_on_batch(X_d_fuzz, y_d_true)
             d_loss = d.train_on_batch(X_d_gen, y_d_gen)
             # train generator
             g_loss = dcgan.train_on_batch(X_g, y_g)
             show_progress(epoch,index,g_loss[0],d_loss[0],g_loss[1],d_loss[1])
 
         # save generated images
-        image = combine_images(g.predict(z_pred))
-        image = image*127.5 + 127.5
-        Image.fromarray(image.astype(np.uint8))\
-            .save(GENERATED_IMAGE_PATH+"%03depoch.png" % (epoch))
-        print()
-        # save models
-        g.save(GENERATED_MODEL_PATH+'dcgan_generator.h5')
-        d.save(GENERATED_MODEL_PATH+'dcgan_discriminator.h5')
+        if epoch % 100 == 0:
+            print("Fuzz factor:", fuzz)
+            image = combine_images(g.predict(z_pred))
+            image = image*127.5 + 127.5
+            Image.fromarray(image.astype(np.uint8))\
+                .save(GENERATED_IMAGE_PATH+"%03depoch.png" % (epoch))
+            print()
+            # save models
+            g.save(GENERATED_MODEL_PATH+'dcgan_generator.h5')
+            d.save(GENERATED_MODEL_PATH+'dcgan_discriminator.h5')
 
 if __name__ == '__main__':
     train()

@@ -1,43 +1,70 @@
 # -*- coding: utf-8 -*-
 from keras.models import Sequential
-from keras.layers import Dense, Activation, Reshape
+from keras.layers import Dense, Activation, Reshape, Cropping2D, ZeroPadding2D
 from keras.layers.normalization import BatchNormalization
 from keras.layers.convolutional import UpSampling2D, Conv2D, MaxPooling2D
 from keras.layers.advanced_activations import LeakyReLU, ELU
 from keras.optimizers import Adam
 from keras.layers import Flatten, Dropout
 
-def generator(input_dim=100,units=1024,activation='relu'):
+x_res = 320 
+y_res = 240
+
+def generator(input_dim=100, activation='relu'):
     model = Sequential()
-    model.add(Dense(input_dim=input_dim, units=units))
+    assert(x_res % 32 == 0)
+    assert(y_res % 24 == 0)
+    dn3 = (256, y_res//24, x_res//32)
+    dn2 = (128, y_res//16, x_res//16)
+    dn1 = (64, y_res//8, x_res//8)
+    d0 = (32, y_res//4, x_res//4)
+    d1 = (16, y_res//2, x_res//2)
+
+
+    model.add(Dense(dn3[0] * dn3[1] * dn3[2], input_dim = input_dim))
     model.add(BatchNormalization())
-    model.add(Activation(activation))
-    model.add(Dense(128*7*7))
-    model.add(BatchNormalization())
-    model.add(Activation(activation))
-    model.add(Reshape((7, 7, 128), input_shape=(128*7*7,)))
+    model.add(ELU())
+    #model.add(Activation(activation))
+    model.add(Reshape((dn3[1], dn3[2], dn3[0]), input_shape = (dn3[0] * dn3[1] * dn3[2],)))
     model.add(UpSampling2D((2, 2)))
-    model.add(Conv2D(64, (5, 5), padding='same'))
-    model.add(BatchNormalization())
-    model.add(Activation(activation))
-    model.add(UpSampling2D((2, 2)))
+
+    for dims in [dn2, dn1, d0, d1]:
+        model.add(Conv2D(dims[0], (5, 5), padding='same'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.5)) # ?
+        model.add(ELU())
+        #model.add(Activation(activation))
+        model.add(UpSampling2D((2, 2)))
+
     model.add(Conv2D(1, (5, 5), padding='same'))
+
+    model.add(Cropping2D(((320-240) // 2, 0)))
+
     model.add(Activation('tanh'))
     print(model.summary())
     return model
 
-def discriminator(input_shape=(28, 28, 1),nb_filter=64):
+def discriminator(input_shape=(y_res, x_res, 1), nb_filter=8):
     model = Sequential()
-    model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same',
-                            input_shape=input_shape))
+
+    #model.add(ZeroPadding2D(((340-240) // 2, 0)))
+
+    model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape))
     model.add(BatchNormalization())
     model.add(ELU())
-    model.add(Conv2D(2*nb_filter, (5, 5), strides=(2, 2)))
-    model.add(BatchNormalization())
-    model.add(ELU())
-    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    for i in range(len([4, 8, 16, 32])):
+        model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(2, 2)))
+        model.add(BatchNormalization())
+        model.add(ELU())
+
+    #model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Flatten())
-    model.add(Dense(4*nb_filter))
+    model.add(Dense(1024))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.5))
+    model.add(ELU())
+    model.add(Dense(100))
     model.add(BatchNormalization())
     model.add(Dropout(0.5))
     model.add(ELU())
