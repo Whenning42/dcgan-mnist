@@ -2,10 +2,12 @@
 from keras.models import Sequential
 from keras.layers import Dense, Activation, Reshape, Cropping2D, ZeroPadding2D
 from keras.layers.normalization import BatchNormalization
+from BN16 import BatchNormalizationF16
 from keras.layers.convolutional import UpSampling2D, Conv2D, MaxPooling2D
 from keras.layers.advanced_activations import LeakyReLU, ELU
 from keras.optimizers import Adam
 from keras.layers import Flatten, Dropout
+
 
 x_res = 320 
 y_res = 240
@@ -22,7 +24,7 @@ def generator(input_dim=100, activation='relu'):
 
 
     model.add(Dense(dn3[0] * dn3[1] * dn3[2], input_dim = input_dim))
-    model.add(BatchNormalization())
+    model.add(BatchNormalizationF16())
     model.add(ELU())
     #model.add(Activation(activation))
     model.add(Reshape((dn3[1], dn3[2], dn3[0]), input_shape = (dn3[0] * dn3[1] * dn3[2],)))
@@ -30,10 +32,9 @@ def generator(input_dim=100, activation='relu'):
 
     for dims in [dn2, dn1, d0, d1]:
         model.add(Conv2D(dims[0], (5, 5), padding='same'))
-        model.add(BatchNormalization())
-        model.add(Dropout(0.5)) # ?
+        model.add(BatchNormalizationF16())
+        # model.add(Dropout(0.5)) # ?
         model.add(ELU())
-        #model.add(Activation(activation))
         model.add(UpSampling2D((2, 2)))
 
     model.add(Conv2D(1, (5, 5), padding='same'))
@@ -50,23 +51,20 @@ def discriminator(input_shape=(y_res, x_res, 1), nb_filter=8):
     #model.add(ZeroPadding2D(((340-240) // 2, 0)))
 
     model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape))
-    model.add(BatchNormalization())
+    model.add(BatchNormalizationF16())
     model.add(ELU())
 
     for i in range(len([4, 8, 16, 32])):
         model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(2, 2)))
-        model.add(BatchNormalization())
+        model.add(BatchNormalizationF16())
         model.add(ELU())
 
     #model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Flatten())
-    model.add(Dense(1024))
-    model.add(BatchNormalization())
-    model.add(Dropout(0.5))
+    model.add(Dense(512))
+    # model.add(Dropout(0.5))
     model.add(ELU())
     model.add(Dense(100))
-    model.add(BatchNormalization())
-    model.add(Dropout(0.5))
     model.add(ELU())
     model.add(Dense(1))
     model.add(Activation('sigmoid'))

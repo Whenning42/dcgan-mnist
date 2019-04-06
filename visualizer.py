@@ -16,7 +16,7 @@ def combine_images(generated_images):
         combined_image[height*j:height*(j+1), width*i:width*(i+1)] = image[:, :, 0]
     return combined_image
 
-def show_progress(e,i,g0,d0,g1,d1):
-    sys.stdout.write("\repoch: %d, batch: %d, g_loss: %f, d_loss: %f, g_accuracy: %f, d_accuracy: %f" % (e,i,g0,d0,g1,d1))
+def show_progress(e, i, g0, dr0, df0, g1, dr1, df1):
+    sys.stdout.write("\repoch: %d, batch: %d, g_loss: %f, dr_loss: %f, df_loss: %f, g_accuracy: %f, dr_accuracy: %f, df_accuracy: %f" % (e, i, g0, dr0, df0, g1, dr1, df1))
     sys.stdout.flush()
 

@@ -9,6 +9,7 @@ from keras.optimizers import SGD, Adam
 from keras.utils import plot_model
 from visualizer import *
 from keras import backend as K
+import keras
 import skyrogue_loader
 
 from keras.backend.tensorflow_backend import set_session
@@ -21,7 +22,7 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 
 # After we have a seemingly working impl we can play around with fp16
 #K.set_floatx('float16')
-#K.set_epsilon(1e-4)
+#K.set_epsilon(1e-3)
 
 BATCH_SIZE = 32
 #BATCH_SIZE = 8
@@ -45,7 +46,7 @@ def train():
         #(X_train, y_train), (_, _) = mnist.load_data()
         #(X_train, _), (_, _) = skyrogue.load_data(160, 120)
         X_train = skyrogue_loader.load_images()
-        X_train = X_train[800:1100, :, :]
+        X_train = X_train[100:5100, :, :]
         # normalize images
         print("Started normalizing images")
         X_train = (X_train.astype(np.float16) - 127.5)/127.5
@@ -67,10 +68,9 @@ def train():
     plot_model(g, to_file='generator.png')
 
     d = discriminator()
-    plot_model(g, to_file='discriminator.png')
+    plot_model(d, to_file='discriminator.png')
 
     opt = Adam(lr=LR,beta_1=B1)
-    d.trainable = True
     d.compile(loss='binary_crossentropy',
               metrics=['accuracy'],
               optimizer=opt)
@@ -93,29 +93,36 @@ def train():
     print("Total epoch:", NUM_EPOCH, "Number of batches:", num_batches)
     print("-------------------")
     #z_pred = np.array([np.random.uniform(-1,1,100) for _ in range(49)])
-    z_pred = np.array([np.random.normal(0,0.5,100) for _ in range(49)])
+    z_pred = np.array([np.random.normal(0, 0.5, 100) for _ in range(49)])
     y_g = [1]*BATCH_SIZE
     y_d_true = [1]*BATCH_SIZE
     y_d_gen = [0]*BATCH_SIZE
-    for epoch in list(map(lambda x: x+1,range(NUM_EPOCH))):
-        fuzz = max((3000 - epoch) / 3000, 0)
-
+    for epoch in list(map(lambda x: x+1, range(NUM_EPOCH))):
+        fuzz = max((200 - epoch) / 200, 0)
+    #    fuzz = 0
+        
+        shuffled_indices = np.random.permutation(X_train.shape[0])
         for index in range(num_batches):
-            X_d_true = X_train[index*BATCH_SIZE:(index+1)*BATCH_SIZE]
+            X_d_true = X_train[shuffled_indices[index*BATCH_SIZE:(index+1)*BATCH_SIZE]]
             X_d_fuzz = X_d_true * (1-fuzz) + fuzz * np.random.uniform(-1, 1, [BATCH_SIZE, 240, 320, 1])
 
-            X_g = np.array([np.random.normal(0,0.5,100) for _ in range(BATCH_SIZE)])
+            X_g = np.array([np.random.normal(0, 0.5, 100) for _ in range(BATCH_SIZE)])
             X_d_gen = g.predict(X_g, verbose=0)
 
-            # train discriminator
-            d_loss = d.train_on_batch(X_d_fuzz, y_d_true)
-            d_loss = d.train_on_batch(X_d_gen, y_d_gen)
-            # train generator
+            #h = d.predict(X_d_fuzz)
+            dr_loss = d.train_on_batch(X_d_fuzz, y_d_true)
+            #print()
+            #print(h)
+            #print(d.metrics_names)
+            #print(K.eval(keras.losses.binary_crossentropy(K.variable(np.array(y_d_true)), K.variable(np.array(h[:, 0])))))
+
+            df_loss = d.train_on_batch(X_d_gen, y_d_gen)
             g_loss = dcgan.train_on_batch(X_g, y_g)
-            show_progress(epoch,index,g_loss[0],d_loss[0],g_loss[1],d_loss[1])
+
+            show_progress(epoch, index, g_loss[0], dr_loss[0], df_loss[0], g_loss[1], dr_loss[1], df_loss[1])
 
         # save generated images
-        if epoch % 100 == 0:
+        if epoch % 10 == 0:
             print("Fuzz factor:", fuzz)
             image = combine_images(g.predict(z_pred))
             image = image*127.5 + 127.5
