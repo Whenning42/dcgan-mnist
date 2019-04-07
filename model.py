@@ -2,7 +2,7 @@
 from keras.models import Sequential
 from keras.layers import Dense, Activation, Reshape, Cropping2D, ZeroPadding2D
 from keras.layers.normalization import BatchNormalization
-#from BN16 import BatchNormalization
+#from BN16 import BatchNormalizationF16
 from keras.layers.convolutional import UpSampling2D, Conv2D, MaxPooling2D
 from keras.layers.advanced_activations import LeakyReLU, ELU
 from keras.optimizers import Adam
@@ -14,15 +14,15 @@ x_res = 320
 y_res = 240
 
 
-def generator(input_dim=100, activation='relu'):
+def generator(input_dim=128, activation='relu'):
     model = Sequential()
     assert(x_res % 32 == 0)
     assert(y_res % 24 == 0)
-    dn3 = (256, y_res//24, x_res//32)
-    dn2 = (128, y_res//16, x_res//16)
-    dn1 = (64, y_res//8, x_res//8)
-    d0 = (32, y_res//4, x_res//4)
-    d1 = (16, y_res//2, x_res//2)
+    dn3 = (32, y_res//24, x_res//32)
+    dn2 = (16, y_res//16, x_res//16)
+    dn1 = (8, y_res//8, x_res//8)
+    d0 = (4, y_res//4, x_res//4)
+    d1 = (2, y_res//2, x_res//2)
 
 
     model.add(Dense(dn3[0] * dn3[1] * dn3[2], input_dim = input_dim))
@@ -47,17 +47,15 @@ def generator(input_dim=100, activation='relu'):
     print(model.summary())
     return model
 
-def discriminator(input_shape=(y_res, x_res, 1), nb_filter=8):
+def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 4):
     model = Sequential()
-
-    #model.add(ZeroPadding2D(((340-240) // 2, 0)))
 
     model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape))
     model.add(BatchNormalization())
     model.add(ELU())
 
     for i in range(len([4, 8, 16, 32])):
-        model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(2, 2)))
+        model.add(Conv2D(min(2**(i+1) * nb_filter, 128), (5, 5), strides=(2, 2)))
         model.add(BatchNormalization())
         model.add(ELU())
 
@@ -66,7 +64,7 @@ def discriminator(input_shape=(y_res, x_res, 1), nb_filter=8):
     model.add(Dense(512))
     # model.add(Dropout(0.5))
     model.add(ELU())
-    model.add(Dense(100))
+    model.add(Dense(128))
     model.add(ELU())
     model.add(Dense(1))
     model.add(Activation('sigmoid'))

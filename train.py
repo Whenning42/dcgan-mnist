@@ -11,6 +11,7 @@ from visualizer import *
 from keras import backend as K
 from tensorflow.python.client import timeline
 import matplotlib.pyplot as plt
+import numexpr as ne
 
 import keras
 import skyrogue_loader
@@ -25,9 +26,9 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 
 # After we have a seemingly working impl we can play around with fp16
 #K.set_floatx('float16')
-#K.set_epsilon(1e-4)
+#K.set_epsilon(5e-4)
 
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 #BATCH_SIZE = 8
 #NUM_EPOCH = 50
 NUM_EPOCH = 50000
@@ -35,8 +36,6 @@ LR = 0.0002  # initial learning rate
 B1 = 0.5  # momentum term
 GENERATED_IMAGE_PATH = 'images/'
 GENERATED_MODEL_PATH = 'models/'
-
-profile = False
 
 from PIL import Image
 
@@ -48,11 +47,11 @@ def train():
     except IOError:
         #(X_train, y_train), (_, _) = mnist.load_data()
         #(X_train, _), (_, _) = skyrogue.load_data(160, 120)
-        X_train = skyrogue_loader.load_images()
-#        X_train = X_train[100:5100, :, :]
+        X_train = skyrogue_loader.load_images().astype(np.float32)
+        #X_train = X_train[100:5100, :, :]
         # normalize images
         print("Started normalizing images")
-        X_train = (X_train.astype(np.float16) - 127.5)/127.5
+        X_train = ne.evaluate('(X_train - 127.5)/127.5')
         print("Finished normalizing images")
         X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
         print("Finished reshape")
@@ -65,13 +64,6 @@ def train():
         X_train[i, :, :, 0] = X_train[i, :, :, 0] * (1-a) + a * np.random.uniform(-1, 1, [240, 320])
         Image.fromarray(((X_train[i, :, :, 0] + 1) * 127.5).astype('uint8')).show()
         _ = input()
-
-    if profile:
-        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-        run_metadata= tf.RunMetadata()
-    else:
-        run_options = None
-        run_metadata = None 
 
 
     # build GAN
@@ -86,18 +78,14 @@ def train():
     opt = Adam(lr=LR,beta_1=B1)
     d.compile(loss='binary_crossentropy',
               metrics=['accuracy'],
-              optimizer=opt,
-              options=run_options,
-              run_metadata=run_metadata)
+              optimizer=opt)
 
     d.trainable = False
     dcgan = Sequential([g, d])
     opt= Adam(lr=LR,beta_1=B1)
     dcgan.compile(loss='binary_crossentropy',
                   metrics=['accuracy'],
-                  optimizer=opt,
-                  options=run_options,
-                  run_metadata=run_metadata)
+                  optimizer=opt)
 
     num_batches = int(X_train.shape[0] / BATCH_SIZE)
     # create directory
@@ -110,7 +98,11 @@ def train():
     print("Total epoch:", NUM_EPOCH, "Number of batches:", num_batches)
     print("-------------------")
     #z_pred = np.array([np.random.uniform(-1,1,100) for _ in range(49)])
-    z_pred = np.array([np.random.normal(0, 0.5, 100) for _ in range(49)])
+    z_pred = np.array([np.random.normal(0, 0.5, 128) for _ in range(49)])
+
+    # Pre-generate noise to speed up the train loop
+    NOISE_IMAGES = 2000
+    noise_images = np.random.uniform(-1, 1, [NOISE_IMAGES, 240, 320, 1])
 
     d_epoch_losses = []
     g_epoch_losses = []
@@ -126,6 +118,7 @@ def train():
         g_batch_losses = []
 
         shuffled_indices = np.random.permutation(X_train.shape[0])
+
         for index in range(num_batches):
             y_g = np.ones(BATCH_SIZE)
             y_d_true = np.ones(BATCH_SIZE)
@@ -136,12 +129,14 @@ def train():
                 arr[label_mask] = random_label[label_mask]
 
             X_d_true = X_train[shuffled_indices[index*BATCH_SIZE:(index+1)*BATCH_SIZE]]
-            X_d_fuzz = X_d_true * (1 - image_fuzz) + label_fuzz * np.random.uniform(-1, 1, [BATCH_SIZE, 240, 320, 1])
+            noise_index = np.random.randint(0, NOISE_IMAGES - BATCH_SIZE)
+            noise_to_use = noise_images[noise_index : noise_index + BATCH_SIZE]
+            X_fuzz = ne.evaluate('X_d_true * (1-image_fuzz) + image_fuzz * noise_to_use')
 
-            X_g = np.array([np.random.normal(0, 0.5, 100) for _ in range(BATCH_SIZE)])
+            X_g = np.array([np.random.normal(0, 0.5, 128) for _ in range(BATCH_SIZE)])
             X_d_gen = g.predict(X_g, verbose=0)
 
-            d_real_loss, d_real_acc = d.train_on_batch(X_d_fuzz, y_d_true)
+            d_real_loss, d_real_acc = d.train_on_batch(X_d_true, y_d_true)
             d_generated_loss, d_generated_acc = d.train_on_batch(X_d_gen, y_d_gen)
             d_batch_losses.append((d_generated_loss + d_real_loss) / 2)
 
@@ -163,12 +158,6 @@ def train():
 
         plt.yscale("log")
         plt.savefig('log_loss_chart.png')
-
-        if profile:
-            tl = timeline.Timeline(run_metadata.step_stats)
-            ctf = tl.generate_chrome_trace_format()
-            with open('timeline.json', 'w') as f:
-                f.write(ctf)
 
         # Checkpoint the model and write save an image of the model's generated output
         if epoch % 10 == 0:
