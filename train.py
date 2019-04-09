@@ -41,22 +41,7 @@ GENERATED_MODEL_PATH = 'models/'
 from PIL import Image
 
 def train():
-    cache_path = ".full_preprocessed.npy"
-    try:
-        X_train = np.load(cache_path)
-        print("Got cached preproccessed images")
-    except IOError:
-        #(X_train, y_train), (_, _) = mnist.load_data()
-        #(X_train, _), (_, _) = skyrogue.load_data(160, 120)
-        X_train = skyrogue_loader.load_images().astype(np.float32)
-        #X_train = X_train[100:5100, :, :]
-        # normalize images
-        print("Started normalizing images")
-        X_train = ne.evaluate('(X_train - 127.5)/127.5')
-        print("Finished normalizing images")
-        X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
-        print("Finished reshape")
-        np.save(cache_path, X_train)
+    X_train = skyrogue_loader.load_images()
 
     a = .2
     for i in range(1, X_train.shape[0], X_train.shape[0] // 20):
