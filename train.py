@@ -28,11 +28,12 @@ set_session(sess)  # set this TensorFlow session as the default session for Kera
 #K.set_floatx('float16')
 #K.set_epsilon(5e-4)
 
-BATCH_SIZE = 256
+BATCH_SIZE = 128
 #BATCH_SIZE = 8
 #NUM_EPOCH = 50
 NUM_EPOCH = 50000
-LR = 0.0002  # initial learning rate
+LR_G = 0.0002  # initial learning rate
+LR_D = 0.0002  # initial learning rate
 B1 = 0.5  # momentum term
 GENERATED_IMAGE_PATH = 'images/'
 GENERATED_MODEL_PATH = 'models/'
@@ -75,14 +76,14 @@ def train():
     # d = keras.models.load_model(GENERATED_MODEL_PATH+'dcgan_discriminator.h5')
     plot_model(d, to_file='discriminator.png')
 
-    opt = Adam(lr=LR,beta_1=B1)
+    opt = Adam(lr=LR_D, beta_1=B1)
     d.compile(loss='binary_crossentropy',
               metrics=['accuracy'],
               optimizer=opt)
 
     d.trainable = False
     dcgan = Sequential([g, d])
-    opt= Adam(lr=LR,beta_1=B1)
+    opt= Adam(lr=LR_G, beta_1=B1)
     dcgan.compile(loss='binary_crossentropy',
                   metrics=['accuracy'],
                   optimizer=opt)
@@ -108,11 +109,11 @@ def train():
     g_epoch_losses = []
     for epoch in list(map(lambda x: x+1, range(NUM_EPOCH))):
         # Add noise to the images
-        image_fuzz = .5 ** (epoch / 30)
+        image_fuzz = .5 ** (epoch / 10) * .5
         #fuzz = 0
 
         # Use noisey labels
-        label_fuzz = image_fuzz
+        label_fuzz = .05
         
         d_batch_losses = []
         g_batch_losses = []
@@ -136,7 +137,7 @@ def train():
             X_g = np.array([np.random.normal(0, 0.5, 128) for _ in range(BATCH_SIZE)])
             X_d_gen = g.predict(X_g, verbose=0)
 
-            d_real_loss, d_real_acc = d.train_on_batch(X_d_true, y_d_true)
+            d_real_loss, d_real_acc = d.train_on_batch(X_fuzz, y_d_true)
             d_generated_loss, d_generated_acc = d.train_on_batch(X_d_gen, y_d_gen)
             d_batch_losses.append((d_generated_loss + d_real_loss) / 2)
 
@@ -160,7 +161,7 @@ def train():
         plt.savefig('log_loss_chart.png')
 
         # Checkpoint the model and write save an image of the model's generated output
-        if epoch % 10 == 0:
+        if epoch % 5 == 0:
             print()
             print("Fuzz factor:", image_fuzz)
             image = combine_images(g.predict(z_pred))
