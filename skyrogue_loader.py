@@ -7,6 +7,8 @@ import numexpr as ne
 
 cache_path = ".full_preprocessed.npy"
 
+import pdb
+
 def load_images():
     try:
         images = np.load(cache_path)
@@ -18,6 +20,7 @@ def load_images():
         num_images = len(os.listdir(folder)) // 2
         images = np.zeros([num_images, 240, 320], dtype='uint8')
 
+        i = 0
         for file in tqdm(sorted(os.listdir(folder))):
             if file[-3:] != "png":
                 continue
@@ -25,11 +28,13 @@ def load_images():
             image_path = folder + "/" + file
             image = Image.open(image_path).convert('L').resize([320, 240])
             images[i] = np.array(image)
+            i += 1
 
         # Normalize the images
+        images = images.astype('float32')
         images = ne.evaluate('(images - 127.5)/127.5')
         print("Finished normalizing images")
-        images = images.reshape(images.shape[0], X_train.shape[1], X_train.shape[2], 1)
+        images = images.reshape(images.shape[0], images.shape[1], images.shape[2], 1)
         print("Finished reshape")
         np.save(cache_path, images)
 

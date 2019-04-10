@@ -31,6 +31,7 @@ def generator(input_dim=128):
 
     for dims in [dn2, dn1, d0, d1]:
         model.add(Conv2D(dims[0], (5, 5), padding='same'))
+#        model.add(Conv2D(dims[0], (5, 5), padding='same'))
         model.add(BatchNormalization())
         model.add(ELU())
         model.add(UpSampling2D((2, 2)))
@@ -58,6 +59,7 @@ def encoder(input_shape, latent_dims):
     model.add(ELU())
 
     for i in range(len([32, 64, 128, 256])):
+#        model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(1, 1), padding='same'))
         model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(2, 2)))
         model.add(BatchNormalization())
         model.add(ELU())
