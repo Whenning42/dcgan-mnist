@@ -10,12 +10,12 @@ def combine_images(images):
     image_width = images.shape[2]
     x_images = int(math.sqrt(num_images))
     y_images = math.ceil(num_images / x_images)
-    combined = np.zeros(image_height * y_images, image_width * x_images)
+    combined = np.zeros((image_height * y_images, image_width * x_images))
 
     for i in range(num_images):
         x = i % x_images
-        y = y // x_images
-        combined[y*height : (y+1)*height, x*width : (x+1)*width] = images[i][:, :, 0]
+        y = i // x_images
+        combined[y*image_height : (y+1)*image_height, x*image_width : (x+1)*image_width] = images[i][:, :, 0]
     return combined
 
 def fix_rtx_bug():
@@ -23,4 +23,4 @@ def fix_rtx_bug():
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     set_session(sess)
-        
+

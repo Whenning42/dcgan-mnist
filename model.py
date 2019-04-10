@@ -10,9 +10,8 @@ from keras.layers import Flatten, Dropout
 import matplotlib.pyplot as plt
 
 
-x_res = 320 
+x_res = 320
 y_res = 240
-
 
 def generator(input_dim=128):
     model = Sequential()
@@ -41,7 +40,7 @@ def generator(input_dim=128):
     model.add(Cropping2D(((320-240) // 2, 0)))
 
     model.add(Activation('tanh'))
-    print(model.summary())
+#    print(model.summary())
     return model
 
 def decoder(input_shape, latent_dims):
@@ -89,6 +88,6 @@ def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 8):
     model.add(ELU())
     model.add(Dense(1))
     model.add(Activation('sigmoid'))
-    print(model.summary())
+ #   print(model.summary())
     return model
 
