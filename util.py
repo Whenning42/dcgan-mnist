@@ -20,7 +20,7 @@ def combine_images(images):
 
 def fix_rtx_bug():
     config = tf.ConfigProto()
-#    config.gpu_options.allow_growth = True
+    config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     set_session(sess)
 

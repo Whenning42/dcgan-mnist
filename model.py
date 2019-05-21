@@ -1,48 +1,91 @@
 # -*- coding: utf-8 -*-
+import keras
 from keras.models import Sequential
 from keras.layers import Dense, Activation, Reshape, Cropping2D, ZeroPadding2D
 from keras.layers.normalization import BatchNormalization
 #from BN16 import BatchNormalizationF16
+from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D, MaxPooling2D
 from keras.layers.advanced_activations import LeakyReLU, ELU
 from keras.optimizers import Adam
 from keras.layers import Flatten, Dropout
 import matplotlib.pyplot as plt
 
+import numpy as np
+import keras.backend as K
 
 x_res = 320
 y_res = 240
 
+def skip_concat(current, input, shape):
+    out_dims = shape[0] * shape[1] * shape[2]
+    x = Dense(out_dims)(input)
+    x = LeakyReLU(.2)(x)
+    x = Reshape((shape[1], shape[2], shape[0]), input_shape = (out_dims,))(x)
+    return keras.layers.Concatenate()([current, x])
+
+def concat(x):
+    current = x
+    shape = (x.shape[1], x.shape[2])
+    coords = np.array(np.meshgrid(np.linspace(-1, 1, shape[1]), np.linspace(-1, 1, shape[0])))
+    coords = np.moveaxis(coords, 0, -1)
+    coords = np.expand_dims(coords, 0) # Add a batch dimension
+    coords = K.variable(coords)
+    coords = K.tile(coords, (K.shape(current)[0], 1, 1, 1)) # Tile along the batch dimension
+    return keras.layers.Lambda(lambda x: K.concatenate(x))([current, coords])
+
+
+# Here shape is just height, width
+def coords_concat(current, shape):
+#    coords = keras.layers.Input(tensor=coords)
+    return keras.layers.Lambda(concat)(current)
+#    return keras.layers.Concatenate()([current, coords]), coords
+
 def generator(input_dim=128):
-    model = Sequential()
     assert(x_res % 32 == 0)
     assert(y_res % 24 == 0)
-    dn3 = (256, y_res//24, x_res//32)
-    dn2 = (128, y_res//16, x_res//16)
-    dn1 = (64, y_res//8, x_res//8)
-    d0 = (32, y_res//4, x_res//4)
-    d1 = (16, y_res//2, x_res//2)
+    dn3 = (256, y_res//24, x_res//32)   # 10x10
+    dn2 = (128, y_res//12, x_res//16)   # 20x20
+    dn1 = (64, y_res//6, x_res//8)      # 40x40
+    d0 = (32, y_res//3, x_res//4)       # 80x80
+    d1 = (16, int(y_res/1.5), x_res//2) # 160x160
 
-    model.add(Dense(dn3[0] * dn3[1] * dn3[2], input_dim = input_dim))
-    model.add(BatchNormalization())
-    model.add(ELU())
-    model.add(Reshape((dn3[1], dn3[2], dn3[0]), input_shape = (dn3[0] * dn3[1] * dn3[2],)))
-    model.add(UpSampling2D((2, 2)))
+    first = dn3
+
+    input = keras.layers.Input(shape = (input_dim,))
+    x = input
+
+    inputs = [input]
+
+    res = Dense(input_dim)(x)
+    #res = BatchNormalization()(res)
+    res = LeakyReLU(.2)(res)
+    x = keras.layers.Add()([x, res])
+
+    x = Dense(first[0] * first[1] * first[2], input_dim = input_dim)(x)
+    # x = BatchNormalization()(x)
+    x = LeakyReLU(.2)(x)
+    x = Reshape((first[1], first[2], first[0]), input_shape = (first[0] * first[1] * first[2],))(x)
+    x = UpSampling2D((2, 2))(x)
 
     for dims in [dn2, dn1, d0, d1]:
-        model.add(Conv2D(dims[0], (5, 5), padding='same'))
-#        model.add(Conv2D(dims[0], (5, 5), padding='same'))
-        model.add(BatchNormalization())
-        model.add(ELU())
-        model.add(UpSampling2D((2, 2)))
+#        x = coords_concat(x, (dims[1], dims[2]))
 
-    model.add(Conv2D(1, (5, 5), padding='same'))
+        x = Conv2D(dims[0], (5, 5), padding='same')(x)
+#        x = skip_concat(x, input, (dims[0] // 10, dims[1], dims[2]))
 
-    model.add(Cropping2D(((320-240) // 2, 0)))
+        # x = BatchNormalization()(x)
+        x = LeakyReLU(.2)(x)
+        x = UpSampling2D((2, 2))(x)
 
-    model.add(Activation('tanh'))
-#    print(model.summary())
-    return model
+    x = Conv2D(1, (5, 5), padding='same')(x)
+
+#    x = keras.layers.Add()([x, res])
+
+    x = Cropping2D(((320-240) // 2, 0))(x)
+
+    x = Activation('tanh')(x)
+    return keras.models.Model(inputs = input, outputs = x)
 
 def decoder(input_shape, latent_dims):
     assert(input_shape == (240, 320, 1))
@@ -50,44 +93,53 @@ def decoder(input_shape, latent_dims):
 
 # Repeats a lot of code with discriminator
 def encoder(input_shape, latent_dims):
-    nb_filter = 8
+    nb_filter = 6
     assert(input_shape == (240, 320, 1))
 
+    input = keras.layers.Input(shape = input_shape)
+    x = input
+
+    x = Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape)(x)
+    # x = BatchNormalization()(x)
+    x = LeakyReLU(.2)(x)
+
+    for channels in [nb_filter * 2 ** (i+1) for i in range(4)]:
+#        x = coords_concat(x, (-1, -1))
+        x = Conv2D(channels, (5, 5), strides=(2, 2))(x)
+        # x = BatchNormalization()(x)
+        x = LeakyReLU(.2)(x)
+
+    x = Flatten()(x)
+    x = Dense(512)(x)
+    x = LeakyReLU(.1)(x)
+
+    # x = Dense(256)(x)  ## Should remove
+    # x = LeakyReLU(.1)(x)
+
+    ## Also change latent_dims in vae_dcgan.py
+
+    x = Dense(latent_dims)(x)
+    x = Activation('tanh')(x)
+
+    return keras.models.Model(inputs = input, outputs = x)
+
+def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 32):
     model = Sequential()
+
     model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape))
     model.add(BatchNormalization())
-    model.add(ELU())
+    model.add(LeakyReLU(.2))
 
     for i in range(len([32, 64, 128, 256])):
-#        model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(1, 1), padding='same'))
-        model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(2, 2)))
+        model.add(Conv2D(2**(i+1) * nb_filter, (5, 5), strides=(2, 2)))
         model.add(BatchNormalization())
-        model.add(ELU())
+        model.add(LeakyReLU(.2))
 
     model.add(Flatten())
     model.add(Dense(512))
-    model.add(ELU())
-    model.add(Dense(latent_dims))
-    model.add(Activation('tanh'))
-    return model
-
-def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 8):
-    model = Sequential()
-
-    model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape))
-    model.add(BatchNormalization())
-    model.add(ELU())
-
-    for i in range(len([32, 64, 128, 256])):
-        model.add(Conv2D(min(2**(i+1) * nb_filter, 256), (5, 5), strides=(2, 2)))
-        model.add(BatchNormalization())
-        model.add(ELU())
-
-    model.add(Flatten())
-    model.add(Dense(512))
-    model.add(ELU())
+    model.add(LeakyReLU(.2))
     model.add(Dense(128))
-    model.add(ELU())
+    model.add(LeakyReLU(.2))
     model.add(Dense(1))
     model.add(Activation('sigmoid'))
  #   print(model.summary())
