@@ -93,53 +93,6 @@ def generator(input_dim = 128):
 
     return keras.models.Model(inputs = input, outputs = x)
 
-def Conv(args):
-    args = (*args, padding = 'same')
-    return Conv2d(args)
-
-def ResAct(x, dim):
-    return keras.layers.Add([x, Act(Dense(dim)(x))])
-
-def DenseAct(x, dim):
-    return Act(Dense(dim)(x))
-
-def Upsample(x):
-    return UpSampling2D((2, 2))(x)
-
-def generator(input_dim = 128):
-    assert(x_res == 320)
-    assert(y_res == 240)
-
-    input = keras.layers.Input(shape = (input_dim,))
-
-    x = input # (LATENT_DIMS)
-    x = ResAct(x, input_dim)
-    x = DenseAct(x, 256*10*10)
-    x = Reshape((256, 10, 10), input_shape = 256*10*10)(x) # (256, 10, 10)
-
-    x = Upsample(x)
-    x = Conv(128, (5, 5)) # (128, 20, 20)
-    x = Act(x)
-
-    x = Upsample(x)
-    x = Conv(64, (5, 5)) # (64, 40, 40)
-    x = Act(x)
-
-    x = Upsample(x)
-    x = Conv(32, (5, 5)) # (32, 80, 80)
-    x = Act(x)
-
-    x = Upsample(x)
-    x = Conv(16, (5, 5)) # (16, 160, 160)
-    x = Act(x)
-
-    x = Upsample(x)
-    x = Conv(1, (5, 5)) # (1, 320, 320)
-
-    x = Cropping2D(((x_res-y_res) // 2, 0))(x)
-    x = Activation('tanh')(x)
-    return keras.models.Model(inputs = input, outputs = x)
-
 def decoder(input_shape, latent_dims):
     assert(input_shape == (240, 320, 1))
     return generator(latent_dims)
