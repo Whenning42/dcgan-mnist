@@ -48,8 +48,7 @@ def concat(x):
 def coords_concat(current, shape):
     return keras.layers.Lambda(concat)(current)
 
-
-def generator(input_dim=128, final_tanh = True):
+def generator(input_dim = 128):
     assert(x_res == 320)
     assert(y_res == 240)
 
@@ -69,29 +68,76 @@ def generator(input_dim=128, final_tanh = True):
     slice_zero_total_dim = np.prod(slices[0])
     x = Dense(slize_zero_total_dim, input_dim = input_dim)(x)
     x = LeakyReLU(relu_slope)(x)
-    x = Reshape(silces[0], input_shape = (slice_zero_total_dim,))(x)
-    x = UpSampling2D((2, 2))(x)
 
-    for i in Range(1, len(slices)):
+    x = Reshape(silces[0], input_shape = (slice_zero_total_dim,))(x)
+
+    for i in Range(0, len(slices)):
         x = Conv2D(slices[i][2], (5, 5), padding='same')(x)
         x = LeakyReLU(relu_slope)(x)
         x = UpSampling2D((2, 2))(x)
 
     # {
     # Old
-    x = Conv2D(1, (5, 5), padding='same')(x)
+    # x = Conv2D(1, (5, 5), padding='same')(x)
 
     # New
     # Reasoning: Last AE configuration had noisy regions around sharp edges.
     # Maybe this could be filtered out
     x = Conv2D(4, (5, 5), padding='same')(x)
+    x = LeakyReLU(relu_slope)(x)
     x = Conv2D(1, (5, 5), padding='same')(x)
     # }
 
-    x = Cropping2D(((320-240) // 2, 0))(x)
-
+    x = Cropping2D(((x_res - y_res) // 2, 0))(x)
     x = Activation('tanh')(x)
 
+    return keras.models.Model(inputs = input, outputs = x)
+
+def Conv(args):
+    args = (*args, padding = 'same')
+    return Conv2d(args)
+
+def ResAct(x, dim):
+    return keras.layers.Add([x, Act(Dense(dim)(x))])
+
+def DenseAct(x, dim):
+    return Act(Dense(dim)(x))
+
+def Upsample(x):
+    return UpSampling2D((2, 2))(x)
+
+def generator(input_dim = 128):
+    assert(x_res == 320)
+    assert(y_res == 240)
+
+    input = keras.layers.Input(shape = (input_dim,))
+
+    x = input # (LATENT_DIMS)
+    x = ResAct(x, input_dim)
+    x = DenseAct(x, 256*10*10)
+    x = Reshape((256, 10, 10), input_shape = 256*10*10)(x) # (256, 10, 10)
+
+    x = Upsample(x)
+    x = Conv(128, (5, 5)) # (128, 20, 20)
+    x = Act(x)
+
+    x = Upsample(x)
+    x = Conv(64, (5, 5)) # (64, 40, 40)
+    x = Act(x)
+
+    x = Upsample(x)
+    x = Conv(32, (5, 5)) # (32, 80, 80)
+    x = Act(x)
+
+    x = Upsample(x)
+    x = Conv(16, (5, 5)) # (16, 160, 160)
+    x = Act(x)
+
+    x = Upsample(x)
+    x = Conv(1, (5, 5)) # (1, 320, 320)
+
+    x = Cropping2D(((x_res-y_res) // 2, 0))(x)
+    x = Activation('tanh')(x)
     return keras.models.Model(inputs = input, outputs = x)
 
 def decoder(input_shape, latent_dims):
@@ -134,7 +180,7 @@ def encoder(input_shape, latent_dims):
 
     x = Flatten()(x)
     x = Dense(512)(x)
-    x = LeakyReLU(.1)(x)
+    x = LeakyReLU(relu_slope)(x)
 
     # x = Dense(256)(x)  ## Should remove
     # x = LeakyReLU(.1)(x)
