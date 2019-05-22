@@ -17,13 +17,21 @@ import keras.backend as K
 x_res = 320
 y_res = 240
 
+## Old
+# relu_slope = .2
+
+## New
+relu_slope = .05
+
+# Concatenates the input to the current activations, forming a skip connection
 def skip_concat(current, input, shape):
     out_dims = shape[0] * shape[1] * shape[2]
     x = Dense(out_dims)(input)
-    x = LeakyReLU(.2)(x)
+    x = LeakyReLU(relu_slope)(x)
     x = Reshape((shape[1], shape[2], shape[0]), input_shape = (out_dims,))(x)
     return keras.layers.Concatenate()([current, x])
 
+# A function to be used as a lambda below in the coords_concat function.
 def concat(x):
     current = x
     shape = (x.shape[1], x.shape[2])
@@ -35,11 +43,17 @@ def concat(x):
     return keras.layers.Lambda(lambda x: K.concatenate(x))([current, coords])
 
 
-# Here shape is just height, width
+# Concatenates the xy coordinates of pixels to the currenct activations.
+# This *might* help with the accuracy of UI elements in images, but I haven't conclusively tested this.
 def coords_concat(current, shape):
-#    coords = keras.layers.Input(tensor=coords)
     return keras.layers.Lambda(concat)(current)
-#    return keras.layers.Concatenate()([current, coords]), coords
+
+slices = [(256, 10, 10),
+          (128, 20, 20),
+          (64,  40, 40),
+          (32,  80, 80),
+          (16,  160, 160),
+          (1,   320, 320)]
 
 def generator(input_dim=128):
     assert(x_res % 32 == 0)
@@ -58,29 +72,33 @@ def generator(input_dim=128):
     inputs = [input]
 
     res = Dense(input_dim)(x)
-    #res = BatchNormalization()(res)
-    res = LeakyReLU(.2)(res)
+    res = LeakyReLU(relu_slope)(res)
     x = keras.layers.Add()([x, res])
 
     x = Dense(first[0] * first[1] * first[2], input_dim = input_dim)(x)
     # x = BatchNormalization()(x)
-    x = LeakyReLU(.2)(x)
+    x = LeakyReLU(relu_slope)(x)
     x = Reshape((first[1], first[2], first[0]), input_shape = (first[0] * first[1] * first[2],))(x)
     x = UpSampling2D((2, 2))(x)
 
     for dims in [dn2, dn1, d0, d1]:
 #        x = coords_concat(x, (dims[1], dims[2]))
-
         x = Conv2D(dims[0], (5, 5), padding='same')(x)
 #        x = skip_concat(x, input, (dims[0] // 10, dims[1], dims[2]))
 
-        # x = BatchNormalization()(x)
-        x = LeakyReLU(.2)(x)
+        x = LeakyReLU(relu_slope)(x)
         x = UpSampling2D((2, 2))(x)
 
-    x = Conv2D(1, (5, 5), padding='same')(x)
+    # {
+    ## Old
+    # x = Conv2D(1, (5, 5), padding='same')(x)
 
-#    x = keras.layers.Add()([x, res])
+    ## New
+    # Reasoning: Last AE configuration had noisy regions around sharp edges.
+    # Maybe this could be filtered out
+    x = Conv2D(4, (5, 5), padding='same')(x)
+    x = Conv2D(1, (5, 5), padding='same')(x)
+    # }
 
     x = Cropping2D(((320-240) // 2, 0))(x)
 
@@ -101,13 +119,13 @@ def encoder(input_shape, latent_dims):
 
     x = Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape)(x)
     # x = BatchNormalization()(x)
-    x = LeakyReLU(.2)(x)
+    x = LeakyReLU(relu_slope)(x)
 
     for channels in [nb_filter * 2 ** (i+1) for i in range(4)]:
 #        x = coords_concat(x, (-1, -1))
         x = Conv2D(channels, (5, 5), strides=(2, 2))(x)
         # x = BatchNormalization()(x)
-        x = LeakyReLU(.2)(x)
+        x = LeakyReLU(relu_slope)(x)
 
     x = Flatten()(x)
     x = Dense(512)(x)
@@ -128,18 +146,18 @@ def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 32):
 
     model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape))
     model.add(BatchNormalization())
-    model.add(LeakyReLU(.2))
+    model.add(LeakyReLU(relu_slope))
 
     for i in range(len([32, 64, 128, 256])):
         model.add(Conv2D(2**(i+1) * nb_filter, (5, 5), strides=(2, 2)))
         model.add(BatchNormalization())
-        model.add(LeakyReLU(.2))
+        model.add(LeakyReLU(relu_slope))
 
     model.add(Flatten())
     model.add(Dense(512))
-    model.add(LeakyReLU(.2))
+    model.add(LeakyReLU(relu_slope))
     model.add(Dense(128))
-    model.add(LeakyReLU(.2))
+    model.add(LeakyReLU(relu_slope))
     model.add(Dense(1))
     model.add(Activation('sigmoid'))
  #   print(model.summary())
