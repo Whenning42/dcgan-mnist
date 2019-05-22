@@ -48,52 +48,40 @@ def concat(x):
 def coords_concat(current, shape):
     return keras.layers.Lambda(concat)(current)
 
-slices = [(256, 10, 10),
-          (128, 20, 20),
-          (64,  40, 40),
-          (32,  80, 80),
-          (16,  160, 160),
-          (1,   320, 320)]
 
-def generator(input_dim=128):
-    assert(x_res % 32 == 0)
-    assert(y_res % 24 == 0)
-    dn3 = (256, y_res//24, x_res//32)   # 10x10
-    dn2 = (128, y_res//12, x_res//16)   # 20x20
-    dn1 = (64, y_res//6, x_res//8)      # 40x40
-    d0 = (32, y_res//3, x_res//4)       # 80x80
-    d1 = (16, int(y_res/1.5), x_res//2) # 160x160
+def generator(input_dim=128, final_tanh = True):
+    assert(x_res == 320)
+    assert(y_res == 240)
 
-    first = dn3
+    slices = [(10, 10, 256),
+              (20, 20, 128),
+              (40, 40, 64),
+              (80, 80, 32),
+              (160, 160, 16),
+              (320, 320, 1)]
 
     input = keras.layers.Input(shape = (input_dim,))
-    x = input
 
-    inputs = [input]
-
-    res = Dense(input_dim)(x)
+    res = Dense(input_dim)(input)
     res = LeakyReLU(relu_slope)(res)
     x = keras.layers.Add()([x, res])
 
-    x = Dense(first[0] * first[1] * first[2], input_dim = input_dim)(x)
-    # x = BatchNormalization()(x)
+    slice_zero_total_dim = np.prod(slices[0])
+    x = Dense(slize_zero_total_dim, input_dim = input_dim)(x)
     x = LeakyReLU(relu_slope)(x)
-    x = Reshape((first[1], first[2], first[0]), input_shape = (first[0] * first[1] * first[2],))(x)
+    x = Reshape(silces[0], input_shape = (slice_zero_total_dim,))(x)
     x = UpSampling2D((2, 2))(x)
 
-    for dims in [dn2, dn1, d0, d1]:
-#        x = coords_concat(x, (dims[1], dims[2]))
-        x = Conv2D(dims[0], (5, 5), padding='same')(x)
-#        x = skip_concat(x, input, (dims[0] // 10, dims[1], dims[2]))
-
+    for i in Range(1, len(slices)):
+        x = Conv2D(slices[i][2], (5, 5), padding='same')(x)
         x = LeakyReLU(relu_slope)(x)
         x = UpSampling2D((2, 2))(x)
 
     # {
-    ## Old
-    # x = Conv2D(1, (5, 5), padding='same')(x)
+    # Old
+    x = Conv2D(1, (5, 5), padding='same')(x)
 
-    ## New
+    # New
     # Reasoning: Last AE configuration had noisy regions around sharp edges.
     # Maybe this could be filtered out
     x = Conv2D(4, (5, 5), padding='same')(x)
@@ -103,11 +91,28 @@ def generator(input_dim=128):
     x = Cropping2D(((320-240) // 2, 0))(x)
 
     x = Activation('tanh')(x)
+
     return keras.models.Model(inputs = input, outputs = x)
 
 def decoder(input_shape, latent_dims):
     assert(input_shape == (240, 320, 1))
     return generator(latent_dims)
+
+def decoder_with_attention(input_shape, latent_dims):
+    assert(input_shape == (240, 320, 1))
+    x_0 = generator(latent_dims)
+    x_1 = generator(latent_dims)
+    a_0 = generator(latent_dims)
+    a_1 = generator(latent_dims)
+
+    a = keras.layers.concatenate([a_0, a_1])
+    a = keras.layers.Lambda(lambda x: K.softmax(x))([a])
+
+    x = keras.layers.concatenate([x_0, x_1])
+    x = keras.layers.multiply([a, x])
+    x = keras.layers.Lambda(lambda x: K.sum(x, axis = -1, keepdims = True))([x])
+
+    return x
 
 # Repeats a lot of code with discriminator
 def encoder(input_shape, latent_dims):
