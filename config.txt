@@ -1,0 +1,67 @@
+Hyperparameter Options = {
+    LR = [.005, .002, .001, .0005, .0002, .0001, .00005]
+    Beta1 = [.8, .9, .95]
+    Beta2 = [.999]
+    LatentDim = [64, 128, 256, 512]
+    ReluSlope = [0, .05, .1, .2]
+    UseAttention = [True, False]
+    BatchSize = [32]
+    NewConvStart = [True, False]
+    NewConvEnd = [True, False]
+}
+
+BestKnownConfig = {
+    LR = .001
+    Beta1 = .9
+    Beta2 = .999
+    LatentDim = 64
+    ReluSlope = .2
+    BatchSize = 32
+    NewConvStart = False
+    NewConvEnd = False
+    UseAttention = False
+}
+
+Search = {
+    base = BestKnownConfig
+    name = "Architecture fixes"
+    NewConvEnd = [True, False]
+    NewConvStart = [True, False]
+    trials = 3
+}
+
+Search = {
+    base = BestKnownConfig
+    name = "Does attention improve best perf"
+    UseAttention = [True, False]
+    trials = 3
+}
+
+
+
+// Architecture {
+//     LATENT_DIMS = 64
+//     Act = LeakyReLU(.2)
+//
+//     Encoder(Input = (240, 320, 1)) {
+//         ops =
+//             [((240, 320, 1), Conv(6, (5, 5), (2, 2), Act),
+//              ((120, 160, 6), Conv(12, (5, 5), (2, 2), Act),
+//              ((60,  80, 12), Conv(24, (5, 5), (2, 2), Act),
+//              ((30,  40, 24), Conv(48, (5, 5), (2, 2), Act),
+//              ((15,  20, 48), Conv(96, (5, 5), (2, 2), Act),
+//              ((8,   10, 96), Dense(512), Act, Dense(LATENT_DIMS), Tanh]
+//         return ops(x)
+//     }
+//
+//     Unencoder(Input = LATENT_DIMS) {
+//         ops =
+//              [((LATENT_DIMS), ResAct, DenseAct(first_activation_dim)(x),
+//               ((256, 10, 10), Upsample, Conv(128, (5, 5)), Act),
+//               ((128, 20, 20), Upsample, Conv(64, (5, 5)), Act),
+//               ((64,  40, 40), Upsample, Conv(32, (5, 5)), Act),
+//               ((32,  80, 80), Upsample, Conv(16, (5, 5)), Act),
+//               ((16,  160, 160), Upsample, Conv(1, (5, 5))),
+//               ((1,   320, 320), Tanh, Crop((240, 320)))]
+//         return ops(x)
+// }
