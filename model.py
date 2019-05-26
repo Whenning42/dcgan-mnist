@@ -17,17 +17,17 @@ import keras.backend as K
 x_res = 320
 y_res = 240
 
-## Old
-# relu_slope = .2
+NEW_CONV_END = False
+NEW_CONV_START = False
 
-## New
-relu_slope = .05
+RELU_SLOPE = .2
+USE_ATTENTION = False
 
 # Concatenates the input to the current activations, forming a skip connection
 def skip_concat(current, input, shape):
     out_dims = shape[0] * shape[1] * shape[2]
     x = Dense(out_dims)(input)
-    x = LeakyReLU(relu_slope)(x)
+    x = LeakyReLU(RELU_SLOPE)(x)
     x = Reshape((shape[1], shape[2], shape[0]), input_shape = (out_dims,))(x)
     return keras.layers.Concatenate()([current, x])
 
@@ -62,31 +62,33 @@ def generator(input_dim = 128):
     input = keras.layers.Input(shape = (input_dim,))
 
     res = Dense(input_dim)(input)
-    res = LeakyReLU(relu_slope)(res)
+    res = LeakyReLU(RELU_SLOPE)(res)
     x = keras.layers.Add()([x, res])
 
     slice_zero_total_dim = np.prod(slices[0])
     x = Dense(slize_zero_total_dim, input_dim = input_dim)(x)
-    x = LeakyReLU(relu_slope)(x)
+    x = LeakyReLU(RELU_SLOPE)(x)
 
     x = Reshape(silces[0], input_shape = (slice_zero_total_dim,))(x)
-
-    for i in Range(0, len(slices)):
-        x = Conv2D(slices[i][2], (5, 5), padding='same')(x)
-        x = LeakyReLU(relu_slope)(x)
+    if (NEW_CONV_START):
+        for i in Range(0, len(slices) - 1):
+            x = Conv2D(slices[i][2], (5, 5), padding='same')(x)
+            x = LeakyReLU(RELU_SLOPE)(x)
+            x = UpSampling2D((2, 2))(x)
+    else:
         x = UpSampling2D((2, 2))(x)
 
-    # {
-    # Old
-    # x = Conv2D(1, (5, 5), padding='same')(x)
+        for i in Range(1, len(slices) - 1):
+            x = Conv2D(slices[i][2], (5, 5), padding='same')(x)
+            x = LeakyReLU(RELU_SLOPE)(x)
+            x = UpSampling2D((2, 2))(x)
 
-    # New
-    # Reasoning: Last AE configuration had noisy regions around sharp edges.
-    # Maybe this could be filtered out
-    x = Conv2D(4, (5, 5), padding='same')(x)
-    x = LeakyReLU(relu_slope)(x)
-    x = Conv2D(1, (5, 5), padding='same')(x)
-    # }
+    if (NEW_CONV_END):
+        x = Conv2D(4, (5, 5), padding='same')(x)
+        x = LeakyReLU(RELU_SLOPE)(x)
+        x = Conv2D(1, (5, 5), padding='same')(x)
+    else:
+        x = Conv2D(1, (5, 5), padding='same')(x)
 
     x = Cropping2D(((x_res - y_res) // 2, 0))(x)
     x = Activation('tanh')(x)
@@ -94,24 +96,24 @@ def generator(input_dim = 128):
     return keras.models.Model(inputs = input, outputs = x)
 
 def decoder(input_shape, latent_dims):
-    assert(input_shape == (240, 320, 1))
-    return generator(latent_dims)
+    if (USE_ATTENTION):
+        assert(input_shape == (240, 320, 1))
+        x_0 = generator(latent_dims)
+        x_1 = generator(latent_dims)
+        a_0 = generator(latent_dims)
+        a_1 = generator(latent_dims)
 
-def decoder_with_attention(input_shape, latent_dims):
-    assert(input_shape == (240, 320, 1))
-    x_0 = generator(latent_dims)
-    x_1 = generator(latent_dims)
-    a_0 = generator(latent_dims)
-    a_1 = generator(latent_dims)
+        a = keras.layers.concatenate([a_0, a_1])
+        a = keras.layers.Lambda(lambda x: K.softmax(x))([a])
 
-    a = keras.layers.concatenate([a_0, a_1])
-    a = keras.layers.Lambda(lambda x: K.softmax(x))([a])
+        x = keras.layers.concatenate([x_0, x_1])
+        x = keras.layers.multiply([a, x])
+        x = keras.layers.Lambda(lambda x: K.sum(x, axis = -1, keepdims = True))([x])
+        return x
 
-    x = keras.layers.concatenate([x_0, x_1])
-    x = keras.layers.multiply([a, x])
-    x = keras.layers.Lambda(lambda x: K.sum(x, axis = -1, keepdims = True))([x])
-
-    return x
+    else:
+        assert(input_shape == (240, 320, 1))
+        return generator(latent_dims)
 
 # Repeats a lot of code with discriminator
 def encoder(input_shape, latent_dims):
@@ -123,17 +125,17 @@ def encoder(input_shape, latent_dims):
 
     x = Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape)(x)
     # x = BatchNormalization()(x)
-    x = LeakyReLU(relu_slope)(x)
+    x = LeakyReLU(RELU_SLOPE)(x)
 
     for channels in [nb_filter * 2 ** (i+1) for i in range(4)]:
 #        x = coords_concat(x, (-1, -1))
         x = Conv2D(channels, (5, 5), strides=(2, 2))(x)
         # x = BatchNormalization()(x)
-        x = LeakyReLU(relu_slope)(x)
+        x = LeakyReLU(RELU_SLOPE)(x)
 
     x = Flatten()(x)
     x = Dense(512)(x)
-    x = LeakyReLU(relu_slope)(x)
+    x = LeakyReLU(RELU_SLOPE)(x)
 
     # x = Dense(256)(x)  ## Should remove
     # x = LeakyReLU(.1)(x)
@@ -150,18 +152,18 @@ def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 32):
 
     model.add(Conv2D(nb_filter, (5, 5), strides=(2, 2), padding='same', input_shape=input_shape))
     model.add(BatchNormalization())
-    model.add(LeakyReLU(relu_slope))
+    model.add(LeakyReLU(RELU_SLOPE))
 
     for i in range(len([32, 64, 128, 256])):
         model.add(Conv2D(2**(i+1) * nb_filter, (5, 5), strides=(2, 2)))
         model.add(BatchNormalization())
-        model.add(LeakyReLU(relu_slope))
+        model.add(LeakyReLU(RELU_SLOPE))
 
     model.add(Flatten())
     model.add(Dense(512))
-    model.add(LeakyReLU(relu_slope))
+    model.add(LeakyReLU(RELU_SLOPE))
     model.add(Dense(128))
-    model.add(LeakyReLU(relu_slope))
+    model.add(LeakyReLU(RELU_SLOPE))
     model.add(Dense(1))
     model.add(Activation('sigmoid'))
  #   print(model.summary())

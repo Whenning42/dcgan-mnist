@@ -4,12 +4,18 @@ from PIL import Image
 from tqdm import tqdm
 import numpy as np
 import numexpr as ne
+from enum import Enum
 
 cache_path = ".full_preprocessed.npy"
 
-import pdb
+class pixel_format(Enum):
+    rgb_256 = 1
+    gray_minus_1_to_1 = 2
 
-def load_images():
+def load_images(resolution, format):
+    assert(resolution == (320, 240))
+    assert(format == pixel_format.gray_minus_1_to_1)
+
     try:
         images = np.load(cache_path)
     except IOError:
@@ -24,11 +30,13 @@ def load_images():
         for file in tqdm(sorted(os.listdir(folder))):
             if file[-3:] != "png":
                 continue
-              
+
             image_path = folder + "/" + file
             image = Image.open(image_path).convert('L').resize([320, 240])
             images[i] = np.array(image)
             i += 1
+
+        assert(i == num_images)
 
         # Normalize the images
         images = images.astype('float32')
