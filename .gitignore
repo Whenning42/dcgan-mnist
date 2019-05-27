@@ -4,3 +4,6 @@
 2019-04-01 20:22:11:109813
 __pycache__
 *.zip
+models/*
+logs/*
+external/*

@@ -116,7 +116,7 @@ def decoder(input_shape, latent_dims):
         return generator(latent_dims)
 
 # Repeats a lot of code with discriminator
-def encoder(input_shape, latent_dims):
+def encoder(input_shape, latent_dims, final_activation = 'tanh'):
     nb_filter = 6
     assert(input_shape == (240, 320, 1))
 
@@ -143,9 +143,12 @@ def encoder(input_shape, latent_dims):
     ## Also change latent_dims in vae_dcgan.py
 
     x = Dense(latent_dims)(x)
-    x = Activation('tanh')(x)
+    x = Activation(final_activation)(x)
 
     return keras.models.Model(inputs = input, outputs = x)
+
+def simple_conv(input_shape):
+    return encoder(input_shape, 1, final_activation = 'sigmoid')
 
 def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 32):
     model = Sequential()
