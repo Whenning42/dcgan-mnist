@@ -18,7 +18,7 @@ x_res = 320
 y_res = 240
 
 NEW_CONV_END = False
-NEW_CONV_START = False
+NEW_CONV_START = True
 
 RELU_SLOPE = .2
 USE_ATTENTION = False
@@ -149,6 +149,13 @@ def encoder(input_shape, latent_dims, final_activation = 'tanh'):
 
 def simple_conv(input_shape):
     return encoder(input_shape, 1, final_activation = 'sigmoid')
+
+def simple_one_hot_conv(input_shape, output_shape):
+    input = keras.layers.Input(shape = input_shape)
+    x = encoder(input_shape, output_shape[0] * output_shape[1], final_activation = 'linear')(input)
+    x = Reshape(output_shape)(x)
+    x = keras.layers.Lambda(lambda x: K.softmax(x))(x)
+    return keras.models.Model(inputs = input, outputs = x)
 
 def discriminator(input_shape=(y_res, x_res, 1), nb_filter = 32):
     model = Sequential()
